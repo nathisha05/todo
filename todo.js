@@ -1,115 +1,195 @@
-const fs = require("fs");
+const mongoose = require("mongoose");
 const readline = require("readline");
 
+mongoose
+  .connect("mongodb://localhost:27017/todoapp")
+  .then(() => {
+    console.log("Connected to MongoDB");
+    show();
+  })
+  .catch((err) => {
+    console.error("MongoDB connection error:", err);
+  });
+const todoSchema = new mongoose.Schema({
+  text: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  status: {
+    type: String,
+    enum: ["inprogress", "completed"],
+    default: "inprogress",
+  },
+});
+const Todo = mongoose.model("Todo", todoSchema);
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
 });
-function loadTodos() {
-  if (fs.existsSync("todos.json")) {
-    const data = fs.readFileSync("todos.json");
-    return JSON.parse(data);
+
+async function loadTodos(filter = {}) {
+  return await Todo.find(filter);
+}
+
+async function addTodo(text, status) {
+  if (!text.trim()) {
+    console.log("Task cannot be empty!");
+    return;
   }
-  return [];
+  await Todo.create({ text, status });
 }
-function saveTodos(todos) {
-  fs.writeFileSync("todos.json", JSON.stringify(todos, null, 2));
+async function updateTodo(id, updates) {
+  await Todo.findByIdAndUpdate(id, updates);
 }
-
-
+async function deleteTodo(id) {
+  await Todo.findByIdAndDelete(id);
+}
 function show() {
   console.log("\nTODO App");
-  console.log("1. View Tasks");
-  console.log("2. Add Task");
-  console.log("3. Edit Task");
-  console.log("4. Delete Task");
-  console.log("5. Complete Task");
-  console.log("6. Exit");
+  console.log("1. View All Tasks");
+  console.log("2. View Completed Tasks");
+  console.log("3. View In Progress Tasks");
+  console.log("4. Add Task");
+  console.log("5. Edit Task");
+  console.log("6. Delete Task");
+  console.log("7. Change Status");
+  console.log("8. Exit");
 
   rl.question("Choose an option: ", handleMenu);
 }
-function handleMenu(choice) {
-  let todos = loadTodos();
+async function handleMenu(choice) {
+  try {
+    switch (choice) {
+      case "1":
+        displayTasks(await loadTodos());
+        break;
 
-  switch (choice) {
-    case "1":
-      console.log("\nYour Tasks:");
-      if (todos.length === 0) {
-        console.log("No tasks available");
-      } else {
-        todos.forEach((todo, index) => {
-          console.log(
-            `${index + 1}. ${todo.completed ? "[✓]" : "[ ]"} ${todo.text}`,
+      case "2":
+        displayTasks(await loadTodos({ status: "completed" }));
+        break;
+
+      case "3":
+        displayTasks(await loadTodos({ status: "inprogress" }));
+        break;
+
+      case "4":
+        rl.question("Enter task name: ", (text) => {
+          rl.question(
+            "Status (c for completed, ip for inprogress): ",
+            async (status) => {
+              const validStatus =
+                status.toLowerCase() === "c" ? "completed" : "inprogress";
+
+              await addTodo(text, validStatus);
+              console.log("Task added successfully!");
+              show();
+            },
           );
         });
-      }
-      show();
-      break;
+        return;
 
-    case "2":
-      rl.question("Enter new task: ", (task) => {
-        todos.push({ text: task, completed: false });
-        saveTodos(todos);
-        console.log("Task added successfully!");
-        show();
-      });
-      break;
+      case "5":
+        await editTask();
+        return;
 
-    case "3":
-      rl.question("Enter task number to edit: ", (num) => {
-        const index = num - 1;
-        if (todos[index]) {
-          rl.question("Enter new text: ", (newText) => {
-            todos[index].text = newText;
-            saveTodos(todos);
-            console.log("Task updated!");
-            show();
-          });
-        } else {
-          console.log("Invalid task number.");
-          show();
-        }
-      });
-      break;
+      case "6":
+        await deleteTask();
+        return;
 
-    case "4":
-      rl.question("Enter task number to delete: ", (num) => {
-        const index = num - 1;
-        if (todos[index]) {
-          todos.splice(index, 1);
-          saveTodos(todos);
-          console.log("Task deleted!");
-        } else {
-          console.log("Invalid task number.");
-        }
-        show();
-      });
-      break;
+      case "7":
+        await toggleStatus();
+        return;
 
-    case "5":
-      rl.question("Enter task number to complete: ", (num) => {
-        const index = num - 1;
-        if (todos[index]) {
-          todos[index].completed = !todos[index].completed;
-          saveTodos(todos);
-          console.log("Task status updated!");
-        } else {
-          console.log("Invalid task number.");
-        }
-        show();
-      });
-      break;
+      case "8":
+        console.log("Ended");
+        rl.close();
+        mongoose.connection.close();
+        return;
 
-    case "6":
-      console.log("Done");
-      rl.close();
-      break;
+      default:
+        console.log("Invalid choice.");
+    }
 
-    default:
-      console.log("Invalid choice.");
-      show();
+    show();
+  } catch (err) {
+    console.error("Error:", err);
+    show();
   }
 }
 
+async function editTask() {
+  const todos = await loadTodos();
+  displayTasks(todos);
 
-show();
+  rl.question("Enter task number to edit: ", (num) => {
+    const index = parseInt(num) - 1;
+
+    if (!todos[index]) {
+      console.log("Invalid task number.");
+      return show();
+    }
+
+    const id = todos[index]._id;
+
+    rl.question("Enter new text: ", (newText) => {
+      rl.question("Status ( i for inprogress/ c for completed): ", async (status) => {
+        const validStatus =
+          status.toLowerCase() === "c" ? "completed" : "inprogress";
+
+        await updateTodo(id, { text: newText, status: validStatus });
+        console.log("Task updated!");
+        show();
+      });
+    });
+  });
+}
+async function deleteTask() {
+  const todos = await loadTodos();
+  displayTasks(todos);
+
+  rl.question("Enter task number to delete: ", async (num) => {
+    const index = parseInt(num) - 1;
+
+    if (!todos[index]) {
+      console.log("Invalid task number.");
+    } else {
+      await deleteTodo(todos[index]._id);
+      console.log("Task deleted!");
+    }
+
+    show();
+  });
+}
+async function toggleStatus() {
+  const todos = await loadTodos();
+  displayTasks(todos);
+
+  rl.question("Enter task number to change status: ", async (num) => {
+    const index = parseInt(num) - 1;
+
+    if (!todos[index]) {
+      console.log("Invalid task number.");
+    } else {
+      const currentStatus = todos[index].status;
+      const newStatus =
+        currentStatus === "inprogress" ? "completed" : "inprogress";
+
+      await updateTodo(todos[index]._id, { status: newStatus });
+      console.log(`Task status changed to ${newStatus}!`);
+    }
+
+    show();
+  });
+}
+function displayTasks(tasks) {
+  if (!tasks.length) {
+    console.log("No tasks available");
+  } else {
+    tasks.forEach((todo, index) => {
+      const symbol = todo.status === "completed" ? "[✓]" : "[ ]";
+      console.log(`${index + 1}. ${symbol} ${todo.text}`);
+    });
+    console.log(`Total tasks: ${tasks.length}`);
+  }
+}
