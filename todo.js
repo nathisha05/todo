@@ -5,7 +5,6 @@ const readline = require("readline");
 const app = express();
 app.use(express.json());
 
-
 mongoose
   .connect("mongodb://localhost:27017/todoapp")
   .then(() => {
@@ -13,7 +12,6 @@ mongoose
     showMenu();
   })
   .catch((err) => console.log(err));
-
 
 const todoSchema = new mongoose.Schema({
   text: {
@@ -30,16 +28,13 @@ const todoSchema = new mongoose.Schema({
 
 const Todo = mongoose.model("Todo", todoSchema);
 
-
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
 });
 
-
-
 function showMenu() {
-  console.log("\nTODO  APP");
+  console.log("\nTODO APP");
   console.log("1. Add Task");
   console.log("2. Edit Task");
   console.log("3. Complete Task");
@@ -53,10 +48,25 @@ function showMenu() {
 
 async function handleChoice(choice) {
   if (choice === "1") {
-    rl.question("Enter task name: ", async (text) => {
-      await Todo.create({ text });
-      console.log("Task added!");
-      showMenu();
+    rl.question("Enter task name: ", (text) => {
+      rl.question(
+        "Enter status (c for completed / ip for inprogress): ",
+        async (statusInput) => {
+          let status = "inprogress";
+
+          if (statusInput.toLowerCase() === "c") {
+            status = "completed";
+          }
+
+          await Todo.create({
+            text: text,
+            status: status,
+          });
+
+          console.log("Task added successfully!");
+          showMenu();
+        },
+      );
     });
   } else if (choice === "2") {
     const todos = await Todo.find();
@@ -125,7 +135,6 @@ function display(tasks) {
     });
   }
 }
-
 
 app.listen(3000, () => {
   console.log("Express server running on port 3000");
